@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Azure Static Web Apps - AD認証デモ</title>
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      background: #f0f2f5;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 100vh;
+    }
+
+    .card {
+      background: #fff;
+      border-radius: 12px;
+      box-shadow: 0 4px 24px rgba(0, 0, 0, 0.1);
+      padding: 48px 40px;
+      width: 100%;
+      max-width: 480px;
+      text-align: center;
+    }
+
+    .card h1 {
+      font-size: 1.5rem;
+      color: #1a1a2e;
+      margin-bottom: 8px;
+    }
+
+    .card p.subtitle {
+      color: #6b7280;
+      font-size: 0.9rem;
+      margin-bottom: 36px;
+    }
+
+    .btn {
+      display: inline-block;
+      padding: 12px 32px;
+      border: none;
+      border-radius: 8px;
+      font-size: 1rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.2s, transform 0.1s;
+    }
+
+    .btn:active {
+      transform: scale(0.97);
+    }
+
+    .btn-primary {
+      background: #0078d4;
+      color: #fff;
+      width: 100%;
+    }
+
+    .btn-primary:hover {
+      background: #006cbd;
+    }
+
+    .btn-logout {
+      background: transparent;
+      color: #6b7280;
+      border: 1px solid #d1d5db;
+      font-size: 0.85rem;
+      padding: 8px 20px;
+      margin-top: 16px;
+    }
+
+    .btn-logout:hover {
+      background: #f9fafb;
+    }
+
+    .user-info {
+      display: none;
+      background: #f0f7ff;
+      border: 1px solid #bfdbfe;
+      border-radius: 8px;
+      padding: 20px;
+      margin-top: 28px;
+      text-align: left;
+    }
+
+    .user-info.visible {
+      display: block;
+    }
+
+    .user-info .label {
+      font-size: 0.75rem;
+      color: #6b7280;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-bottom: 2px;
+    }
+
+    .user-info .value {
+      font-size: 1rem;
+      color: #1a1a2e;
+      font-weight: 600;
+      margin-bottom: 16px;
+      word-break: break-all;
+    }
+
+    .user-info .value:last-child {
+      margin-bottom: 0;
+    }
+
+    .error-msg {
+      display: none;
+      color: #dc2626;
+      font-size: 0.875rem;
+      margin-top: 16px;
+    }
+
+    .error-msg.visible {
+      display: block;
+    }
+
+    .avatar {
+      width: 64px;
+      height: 64px;
+      border-radius: 50%;
+      background: #0078d4;
+      color: #fff;
+      font-size: 1.75rem;
+      font-weight: 700;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      margin: 0 auto 20px;
+    }
+
+    .avatar.visible {
+      display: flex;
+    }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="avatar" id="avatar"></div>
+    <h1>ユーザー情報の確認</h1>
+    <p class="subtitle">Azure AD 認証済みユーザーの情報を表示します</p>
+
+    <button class="btn btn-primary" id="showInfoBtn" onclick="showUserInfo()">
+      自分の情報を表示する
+    </button>
+
+    <div class="user-info" id="userInfo">
+      <div class="label">表示名</div>
+      <div class="value" id="displayName">-</div>
+      <div class="label">メールアドレス</div>
+      <div class="value" id="email">-</div>
+    </div>
+
+    <div class="error-msg" id="errorMsg"></div>
+
+    <br />
+    <button class="btn btn-logout" onclick="logout()">ログアウト</button>
+  </div>
+
+  <script>
+    async function showUserInfo() {
+      const btn = document.getElementById('showInfoBtn');
+      const userInfo = document.getElementById('userInfo');
+      const errorMsg = document.getElementById('errorMsg');
+      const avatar = document.getElementById('avatar');
+
+      btn.disabled = true;
+      btn.textContent = '取得中...';
+      errorMsg.classList.remove('visible');
+
+      try {
+        const res = await fetch('/.auth/me');
+        if (!res.ok) throw new Error('認証情報の取得に失敗しました');
+
+        const data = await res.json();
+        const principal = data.clientPrincipal;
+
+        if (!principal) {
+          throw new Error('ログインセッションが見つかりません。再ログインしてください。');
+        }
+
+        // AAD claims から名前とメールを取得
+        const claims = principal.claims || [];
+        const getClaim = (type) => {
+          const hit = claims.find(c => c.typ === type || c.type === type);
+          return hit ? hit.val || hit.value : null;
+        };
+
+        const name =
+          getClaim('name') ||
+          getClaim('http://schemas.xmlsoap.org/ws/2005/05/identity/claims/name') ||
+          principal.userDetails ||
+          '(名前不明)';
+
+        const email =
+          getClaim('preferred_username') ||
+          getClaim('http://schemas.xmlsoap.org/ws/2005/05/identity/claims/emailaddress') ||
+          getClaim('email') ||
+          principal.userDetails ||
+          '(メール不明)';
+
+        document.getElementById('displayName').textContent = name;
+        document.getElementById('email').textContent = email;
+        userInfo.classList.add('visible');
+
+        // アバター（イニシャル表示）
+        const initial = name.charAt(0).toUpperCase();
+        avatar.textContent = initial;
+        avatar.classList.add('visible');
+
+        btn.textContent = '情報を再取得する';
+      } catch (err) {
+        errorMsg.textContent = err.message;
+        errorMsg.classList.add('visible');
+        btn.textContent = '自分の情報を表示する';
+      } finally {
+        btn.disabled = false;
+      }
+    }
+
+    function logout() {
+      window.location.href = '/.auth/logout?post_logout_redirect_uri=/';
+    }
+  </script>
+</body>
+</html>
